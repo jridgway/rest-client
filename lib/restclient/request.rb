@@ -145,7 +145,7 @@ module RestClient
     end
 
     def transmit uri, req, payload, & block
-      setup_credentials req
+      setup_credentials uri, req
 
       net = net_http_class.new(uri.host, uri.port)
       net.use_ssl = uri.is_a?(URI::HTTPS)
@@ -201,8 +201,24 @@ module RestClient
       raise RestClient::RequestTimeout
     end
 
-    def setup_credentials(req)
-      req.basic_auth(user, password) if user
+    def setup_credentials(uri, req)
+      if user 
+        urii = uri.clone
+        urii.user = nil
+        urii.password = nil
+        RestClient.head(urii.to_s) { |response, request, result|
+          if result['www-authenticate'] =~ /Digest realm=/
+            digest_auth = Net::HTTP::DigestAuth.new
+            uri.user = user
+            uri.password = password
+            auth = digest_auth.auth_header uri, result['www-authenticate'], @method.upcase
+
+            req['Authorization'] = auth
+          elsif result['www-authenticate'] =~ /Basic realm=/
+            req.basic_auth(user, password)
+          end
+        }
+      end
     end
 
     def fetch_body(http_response)
